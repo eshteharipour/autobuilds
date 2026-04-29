@@ -1,0 +1,79 @@
+name: Publish APT Repository
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install APT tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev apt-utils
+
+      - name: Import GPG Key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+
+      - name: Checkout existing gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: apt-repo
+          
+      - name: Setup repository structure
+        run: |
+          cd apt-repo
+          mkdir -p pool/main
+          # Export public key for users to curl
+          gpg --armor --export "${{ secrets.GPG_KEY_ID }}" > autobuilds.asc
+
+      - name: Download all 'deb-packages' artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-packages
+          path: new-packages
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Move new packages into the repository
+        run: |
+          find new-packages -name "*.deb" -exec mv {} apt-repo/pool/main/ \;
+
+      - name: Generate APT Metadata
+        run: |
+          cd apt-repo
+          dpkg-scanpackages --multiversion pool/ > Packages
+          gzip -k -9 Packages
+          
+          cat <<EOF > Release
+          Architectures: amd64
+          Components: main
+          Suite: stable
+          Codename: stable
+          Origin: AutoBuilds
+          Label: AutoBuilds
+          EOF
+          apt-ftparchive release . >> Release
+
+      - name: Sign APT Repository
+        run: |
+          cd apt-repo
+          gpg --default-key "${{ secrets.GPG_KEY_ID }}" -abs -o Release.gpg Release
+          gpg --default-key "${{ secrets.GPG_KEY_ID }}" --clearsign -o InRelease Release
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'apt-repo'
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

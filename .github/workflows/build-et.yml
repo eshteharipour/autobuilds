@@ -1,0 +1,39 @@
+name: Build and Package 'et'
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os_name: bookworm
+            base_image: debian:12-slim
+          - os_name: jammy
+            base_image: ubuntu:22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image and extract .deb
+        run: |
+          DOCKER_BUILDKIT=1 docker build \
+            --build-arg BASE_IMAGE=${{ matrix.base_image }} \
+            --file tools/et/Dockerfile \
+            --output type=local,dest=./output-deb \
+            tools/et/
+
+          # Rename the .deb to include the OS name so they don't conflict in the APT repo
+          for f in ./output-deb/*.deb; do
+            mv "$f" "${f%.deb}~${{ matrix.os_name }}.deb"
+          done
+
+      - name: Upload .deb as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages-et-${{ matrix.os_name }}
+          path: ./output-deb/*.deb
+          retention-days: 1
