@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     ninja-build \
     cmake \
     git \
+    unzip \
+    curl \
     zip \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
