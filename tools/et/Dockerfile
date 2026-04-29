@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     zip \
     pkg-config \
+    linux-libc-dev \
+    make \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
