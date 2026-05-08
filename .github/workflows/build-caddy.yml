@@ -1,0 +1,60 @@
+name: Build Custom Caddy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tools/caddy/**'
+      - '.github/workflows/build-caddy.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - name: standard
+            plugins: "mholt/caddy-l4,caddyserver/forwardproxy,mholt/caddy-ratelimit,hslatman/caddy-crowdsec-bouncer,greenpau/caddy-security"
+          - name: api
+            plugins: "dunglas/vulcain,dunglas/mercure,caddy-dns/cloudflare"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Extract Package
+        run: |
+          # Build the Docker image
+          docker build \
+            --build-arg PROFILE_NAME=${{ matrix.profile.name }} \
+            --build-arg PLUGINS="${{ matrix.profile.plugins }}" \
+            -t caddy-builder-${{ matrix.profile.name }} \
+            ./tools/caddy
+            
+          # Extract the compiled .deb and the raw binary (for Alpine/other distros)
+          CONTAINER_ID=$(docker create caddy-builder-${{ matrix.profile.name }})
+          mkdir -p artifacts
+          
+          # Extract .deb
+          docker cp $CONTAINER_ID:/build/ artifacts/
+          
+          # Extract raw binary
+          docker cp $CONTAINER_ID:/build/caddy-pkg/usr/bin/caddy artifacts/caddy-${{ matrix.profile.name }}-linux-amd64
+          
+          docker rm $CONTAINER_ID
+
+          # Move deb to the root of artifacts folder
+          mv artifacts/build/*.deb artifacts/
+          rm -rf artifacts/build
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: caddy-${{ matrix.profile.name }}-packages
+          path: artifacts/*
